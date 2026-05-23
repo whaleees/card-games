@@ -85,6 +85,27 @@ export interface MemoryRoomState {
   winnerId?: string;
 }
 
+export interface TwentyFourPlayer {
+  id: string;
+  name: string;
+  score: number;
+}
+
+export interface TwentyFourRoomState {
+  roomId: string;
+  status: "waiting" | "playing" | "round_pause" | "finished";
+  players: TwentyFourPlayer[];
+  round: number;
+  totalRounds: number;
+  roundEndsAt: number | null;
+  cards: Card[] | null;
+  lastWinner?: {
+    playerId: string;
+    name: string;
+    expression: string;
+  } | null;
+}
+
 export type ClientToServerEvents = {
   "memory:create": (
     payload: { name: string; pairs: number },
@@ -96,10 +117,29 @@ export type ClientToServerEvents = {
   ) => void;
   "memory:start": (payload: { roomId: string }) => void;
   "memory:flip": (payload: { roomId: string; cardId: string }) => void;
+  "memory:rematch": (payload: { roomId: string }) => void;
   "memory:leave": (payload: { roomId: string }) => void;
+
+  "tf:create": (
+    payload: { name: string; rounds: number; roundSeconds: number },
+    cb: (res: { roomId: string; state: TwentyFourRoomState }) => void
+  ) => void;
+  "tf:join": (
+    payload: { roomId: string; name: string },
+    cb: (res: { ok: boolean; state?: TwentyFourRoomState; error?: string }) => void
+  ) => void;
+  "tf:start": (payload: { roomId: string }) => void;
+  "tf:submit": (
+    payload: { roomId: string; expression: string },
+    cb: (res: { valid: boolean; reason?: string; result?: number }) => void
+  ) => void;
+  "tf:rematch": (payload: { roomId: string }) => void;
+  "tf:leave": (payload: { roomId: string }) => void;
 };
 
 export type ServerToClientEvents = {
   "memory:state": (state: MemoryRoomState) => void;
   "memory:error": (msg: string) => void;
+  "tf:state": (state: TwentyFourRoomState) => void;
+  "tf:error": (msg: string) => void;
 };

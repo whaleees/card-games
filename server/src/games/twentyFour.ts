@@ -210,6 +210,24 @@ export function evalExpression(expr: string): number | null {
   }
 }
 
+// One-stop validation: operand multiset + safe eval + equals-24 check.
+export function validateExpression(
+  choices: number[][],
+  expr: string
+): { valid: boolean; result?: number; reason?: string } {
+  if (!operandsMatchChoices(expr, choices)) {
+    return { valid: false, reason: "Must use each card exactly once (A=1 or 11, J/Q/K=10)" };
+  }
+  const v = evalExpression(expr);
+  if (v == null) {
+    return { valid: false, reason: "Could not evaluate (use only digits + - * / ( ))" };
+  }
+  const ok = Math.abs(v - 24) < 1e-9;
+  return ok
+    ? { valid: true, result: v }
+    : { valid: false, result: v, reason: `Got ${v}, not 24` };
+}
+
 // Checks the expression's integer operands can be matched 1:1 to cards,
 // where each card may take any value from its choices list (e.g. Aces = 1 or 11).
 export function operandsMatchChoices(expr: string, choices: number[][]): boolean {

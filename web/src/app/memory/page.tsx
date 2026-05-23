@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MemoryRoomState } from "@games/shared";
 import { getSocket } from "@/lib/socket";
 import { MemoryTile } from "@/components/PlayingCard";
+import { LoveRain } from "@/components/LoveRain";
 
 type Mode = "menu" | "lobby" | "playing" | "finished";
 
@@ -94,6 +95,12 @@ export default function MemoryPage() {
     setState(null);
     setMyPlayerId(null);
     setMode("menu");
+  }
+
+  function rematch() {
+    if (!state) return;
+    setError(null);
+    getSocket().emit("memory:rematch", { roomId: state.roomId });
   }
 
   const gridCols = useMemo(() => {
@@ -202,6 +209,7 @@ export default function MemoryPage() {
 
   return (
     <main className="container">
+      {state.status === "finished" && <LoveRain />}
       <div className="page-head">
         <div>
           <h1>Memory</h1>
@@ -232,11 +240,19 @@ export default function MemoryPage() {
 
         <div style={{ marginTop: "0.9rem" }}>
           {state.status === "finished" ? (
-            <div className="toast good">
-              Winner —{" "}
-              <b>
+            <div className="winner-banner">
+              <span className="winner-label">Winner</span>
+              <span className="winner-name">
                 {state.players.find((p) => p.id === state.winnerId)?.name || "—"}
-              </b>
+              </span>
+              <div className="rematch-row">
+                <button className="rematch" onClick={rematch}>
+                  Rematch
+                </button>
+                <button className="ghost" onClick={leave}>
+                  Leave
+                </button>
+              </div>
             </div>
           ) : myTurn ? (
             <div className="chip turn">Your turn</div>

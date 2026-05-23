@@ -11,13 +11,12 @@ import {
 } from "@games/shared";
 import {
   cardsToChoices,
-  evalExpression,
   newTwentyFourPuzzle,
-  operandsMatchChoices,
-  solveFromChoices,
   solveTwentyFour,
+  validateExpression,
 } from "./games/twentyFour";
 import { MemoryRooms, publicState } from "./games/memory";
+import { TwentyFourRooms, tfPublicState } from "./games/twentyFourMulti";
 
 const PORT = parseInt(process.env.PORT || "4000", 10);
 const ORIGINS = (process.env.CORS_ORIGINS || "*")
@@ -64,25 +63,8 @@ app.post("/api/twenty-four/validate", (req, res) => {
       .status(404)
       .json({ valid: false, reason: "Puzzle expired — deal a new one" });
   }
-  if (!operandsMatchChoices(body.expression, puzzle.choices)) {
-    return res.json({
-      valid: false,
-      reason: "Must use each card exactly once (A=1 or 11, J/Q/K=10)",
-    } as TwentyFourValidateResponse);
-  }
-  const v = evalExpression(body.expression);
-  if (v == null) {
-    return res.json({
-      valid: false,
-      reason: "Could not evaluate (use only digits + - * / ( ))",
-    });
-  }
-  const ok = Math.abs(v - 24) < 1e-9;
-  res.json({
-    valid: ok,
-    result: v,
-    reason: ok ? undefined : `Got ${v}, not 24`,
-  });
+  const result = validateExpression(puzzle.choices, body.expression);
+  res.json(result as TwentyFourValidateResponse);
 });
 
 app.get("/api/twenty-four/hint/:id", (req, res) => {
@@ -107,6 +89,19 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
 
 const rooms = new MemoryRooms();
 const pendingMissTimers = new Map<string, NodeJS.Timeout>();
+
+const tfRooms = new TwentyFourRooms();
+const tfRoundTimers = new Map<string, NodeJS.Timeout>();
+const tfPauseTimers = new Map<string, NodeJS.Timeout>();
+
+function clearTfTimers(roomId: string) {
+  const r = tfRoundTimers.get(roomId);
+  if (r) clearTimeout(r);
+  tfRoundTimers.delete(roomId);
+  const p = tfPauseTimers.get(roomId);
+  if (p) clearTimeout(p);
+  tfPauseTimers.delete(roomId);
+}
 
 io.on("connection", (socket) => {
   socket.on("memory:create", ({ name, pairs }, cb) => {
@@ -155,15 +150,129 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("memory:rematch", ({ roomId }) => {
+    const prev = pendingMissTimers.get(roomId);
+    if (prev) {
+      clearTimeout(prev);
+      pendingMissTimers.delete(roomId);
+    }
+    const room = rooms.rematch(roomId);
+    if (!room) return;
+    io.to(roomId).emit("memory:state", publicState(room));
+  });
+
   socket.on("memory:leave", ({ roomId }) => {
     const out = rooms.leave(socket.id);
     socket.leave(roomId);
     if (out) io.to(out.roomId).emit("memory:state", publicState(out.room));
   });
 
+  // --- 24 multiplayer ---
+
+  function scheduleTfRoundTimeout(roomId: string, endsAt: number | null) {
+    const prev = tfRoundTimers.get(roomId);
+    if (prev) clearTimeout(prev);
+    tfRoundTimers.delete(roomId);
+    if (!endsAt) return;
+    const ms = endsAt - Date.now();
+    if (ms <= 0) return;
+    tfRoundTimers.set(
+      roomId,
+      setTimeout(() => {
+        tfRoundTimers.delete(roomId);
+        const room = tfRooms.rooms.get(roomId);
+        if (!room || room.status !== "playing") return;
+        room.status = "round_pause";
+        room.roundEndsAt = null;
+        io.to(roomId).emit("tf:state", tfPublicState(room));
+        scheduleTfPause(roomId);
+      }, ms)
+    );
+  }
+
+  function scheduleTfPause(roomId: string) {
+    const prev = tfPauseTimers.get(roomId);
+    if (prev) clearTimeout(prev);
+    const roundT = tfRoundTimers.get(roomId);
+    if (roundT) clearTimeout(roundT);
+    tfRoundTimers.delete(roomId);
+    tfPauseTimers.set(
+      roomId,
+      setTimeout(() => {
+        tfPauseTimers.delete(roomId);
+        const updated = tfRooms.advance(roomId);
+        if (!updated) return;
+        io.to(roomId).emit("tf:state", tfPublicState(updated));
+        if (updated.status === "playing") {
+          scheduleTfRoundTimeout(roomId, updated.roundEndsAt);
+        }
+      }, 3500)
+    );
+  }
+
+  socket.on("tf:create", ({ name, rounds, roundSeconds }, cb) => {
+    const room = tfRooms.create(name, rounds, roundSeconds, socket.id);
+    socket.join(room.roomId);
+    cb({ roomId: room.roomId, state: tfPublicState(room) });
+    io.to(room.roomId).emit("tf:state", tfPublicState(room));
+  });
+
+  socket.on("tf:join", ({ roomId, name }, cb) => {
+    const result = tfRooms.join(roomId.toUpperCase(), name, socket.id);
+    if (!result.ok || !result.room) {
+      cb({ ok: false, error: result.error });
+      return;
+    }
+    socket.join(result.room.roomId);
+    cb({ ok: true, state: tfPublicState(result.room) });
+    io.to(result.room.roomId).emit("tf:state", tfPublicState(result.room));
+  });
+
+  socket.on("tf:start", ({ roomId }) => {
+    const room = tfRooms.start(roomId);
+    if (!room) return;
+    io.to(roomId).emit("tf:state", tfPublicState(room));
+    if (room.status === "playing") scheduleTfRoundTimeout(roomId, room.roundEndsAt);
+  });
+
+  socket.on("tf:submit", ({ roomId, expression }, cb) => {
+    const out = tfRooms.submit(roomId, socket.id, expression);
+    if ("error" in out) {
+      cb({ valid: false, reason: out.error });
+      return;
+    }
+    cb({ valid: out.correct, reason: out.reason, result: out.result });
+    if (out.firstSolve) {
+      io.to(roomId).emit("tf:state", tfPublicState(out.room));
+      scheduleTfPause(roomId);
+    }
+  });
+
+  socket.on("tf:rematch", ({ roomId }) => {
+    clearTfTimers(roomId);
+    const room = tfRooms.rematch(roomId);
+    if (!room) return;
+    io.to(roomId).emit("tf:state", tfPublicState(room));
+    if (room.status === "playing") scheduleTfRoundTimeout(roomId, room.roundEndsAt);
+  });
+
+  socket.on("tf:leave", ({ roomId }) => {
+    const out = tfRooms.leave(socket.id);
+    socket.leave(roomId);
+    if (!out) {
+      clearTfTimers(roomId);
+      return;
+    }
+    io.to(out.roomId).emit("tf:state", tfPublicState(out.room));
+  });
+
   socket.on("disconnect", () => {
-    const out = rooms.leave(socket.id);
-    if (out) io.to(out.roomId).emit("memory:state", publicState(out.room));
+    const memOut = rooms.leave(socket.id);
+    if (memOut) io.to(memOut.roomId).emit("memory:state", publicState(memOut.room));
+    const tfOut = tfRooms.leave(socket.id);
+    if (tfOut) {
+      io.to(tfOut.roomId).emit("tf:state", tfPublicState(tfOut.room));
+    }
   });
 });
 

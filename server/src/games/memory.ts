@@ -195,6 +195,21 @@ export class MemoryRooms {
     return room;
   }
 
+  rematch(roomId: string): InternalRoom | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    if (room.status !== "finished") return room;
+    const pairs = Math.max(2, Math.floor(room.cards.length / 2));
+    room.cards = buildDeck(pairs);
+    for (const p of room.players) p.score = 0;
+    room.pendingFlip = null;
+    room.lockUntil = 0;
+    room.winnerId = undefined;
+    room.status = "playing";
+    room.currentTurn = room.players[0]?.id ?? null;
+    return room;
+  }
+
   leave(socketId: string): { roomId: string; room: InternalRoom } | null {
     for (const [roomId, room] of this.rooms) {
       const pid = room.socketToPlayer.get(socketId);
