@@ -1,0 +1,10 @@
+{
+  "name": "@games/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "echo \"shared is consumed as TS source\""
+  }
+}

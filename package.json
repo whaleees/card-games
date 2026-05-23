@@ -1,0 +1,21 @@
+{
+  "name": "card-games",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "typecheck": "npm run typecheck -w server && npx tsc --noEmit -p web/tsconfig.json",
+    "ngrok": "ngrok http 4000"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
