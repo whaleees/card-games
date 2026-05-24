@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Card, Rank } from "@games/shared";
 import { PlayingCard } from "./PlayingCard";
 
@@ -65,6 +65,15 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
   const [pending, setPending] = useState<{ src: string; tgt: string } | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [completed, setCompleted] = useState(false);
+  const dragRef = useRef<{
+    pointerId: number;
+    src: string;
+    el: HTMLElement;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const justDraggedRef = useRef(false);
 
   // (Re)initialise whenever the upstream card set changes or a reset is requested.
   useEffect(() => {
@@ -105,6 +114,10 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
 
   function onCardClick(uid: string) {
     if (disabled || completed) return;
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
     if (selected === null) {
       setSelected(uid);
     } else if (selected === uid) {
@@ -182,25 +195,79 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
     }
   }, [live, completed, onComplete]);
 
-  // --- drag handlers ---
-  function onDragStart(e: React.DragEvent, uid: string) {
-    if (disabled || completed) { e.preventDefault(); return; }
-    e.dataTransfer.setData("text/plain", uid);
-    e.dataTransfer.effectAllowed = "move";
+  // --- unified pointer drag (works for mouse + touch + pen) ---
+  function findSlotUidAt(x: number, y: number, excludeUid: string): string | null {
+    const stack = document.elementsFromPoint(x, y);
+    for (const el of stack) {
+      if (!(el instanceof HTMLElement)) continue;
+      const slot = el.closest('[data-board-slot]') as HTMLElement | null;
+      if (!slot) continue;
+      const uid = slot.getAttribute('data-uid');
+      if (uid && uid !== excludeUid) return uid;
+    }
+    return null;
   }
-  function onDragOver(e: React.DragEvent, uid: string) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dragOver !== uid) setDragOver(uid);
+
+  function onPointerDown(e: React.PointerEvent, uid: string) {
+    if (disabled || completed) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const el = e.currentTarget as HTMLElement;
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    dragRef.current = {
+      pointerId: e.pointerId,
+      src: uid,
+      el,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
   }
-  function onDragLeave(uid: string) {
-    if (dragOver === uid) setDragOver(null);
+
+  function resetDragVisuals(el: HTMLElement) {
+    el.classList.remove("dragging");
+    el.style.transform = "";
+    el.style.zIndex = "";
   }
-  function onDrop(e: React.DragEvent, targetUid: string) {
-    e.preventDefault();
+
+  function onPointerMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved) {
+      if (Math.hypot(dx, dy) < 8) return;
+      d.moved = true;
+      d.el.classList.add("dragging");
+      d.el.style.zIndex = "10";
+    }
+    // Follow the pointer with a slight tilt for tactile feedback.
+    const tilt = Math.max(-12, Math.min(12, dx * 0.05));
+    d.el.style.transform = `translate(${dx}px, ${dy}px) rotate(${tilt}deg) scale(1.04)`;
+    const targetUid = findSlotUidAt(e.clientX, e.clientY, d.src);
+    setDragOver(targetUid);
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    try { d.el.releasePointerCapture(e.pointerId); } catch {}
+    const wasDragging = d.moved;
+    resetDragVisuals(d.el);
+    dragRef.current = null;
     setDragOver(null);
-    const sourceUid = e.dataTransfer.getData("text/plain");
-    if (sourceUid && sourceUid !== targetUid) pickPair(sourceUid, targetUid);
+    if (!wasDragging) return; // treat as a click — onClick handles selection
+    justDraggedRef.current = true;
+    const targetUid = findSlotUidAt(e.clientX, e.clientY, d.src);
+    if (targetUid) pickPair(d.src, targetUid);
+  }
+
+  function onPointerCancel(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    try { d.el.releasePointerCapture(e.pointerId); } catch {}
+    resetDragVisuals(d.el);
+    dragRef.current = null;
+    setDragOver(null);
   }
 
   return (
@@ -217,12 +284,13 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
           return (
             <div
               key={lc.uid}
+              data-board-slot=""
+              data-uid={lc.uid}
               className={slotCls}
-              draggable={!disabled && !completed}
-              onDragStart={(e) => onDragStart(e, lc.uid)}
-              onDragOver={(e) => onDragOver(e, lc.uid)}
-              onDragLeave={() => onDragLeave(lc.uid)}
-              onDrop={(e) => onDrop(e, lc.uid)}
+              onPointerDown={(e) => onPointerDown(e, lc.uid)}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerCancel}
               onClick={() => onCardClick(lc.uid)}
             >
               {isOriginal ? (
@@ -233,6 +301,7 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
               {isAce ? (
                 <button
                   className="ace-toggle"
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); toggleAce(lc.uid); }}
                   type="button"
                   disabled={disabled || completed}
@@ -268,9 +337,15 @@ export function CardBoard({ cards, onComplete, disabled, resetSignal }: Props) {
 function CombinedCard({ text }: { text: string }) {
   return (
     <div className="card combined">
-      <div className="corner">{text}</div>
-      <div className="center">{text}</div>
-      <div className="corner br">{text}</div>
+      <div className="card-inset">
+        <div className="corner tl">
+          <div className="rank">{text}</div>
+        </div>
+        <div className="combined-face">{text}</div>
+        <div className="corner br">
+          <div className="rank">{text}</div>
+        </div>
+      </div>
     </div>
   );
 }

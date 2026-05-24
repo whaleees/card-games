@@ -15,13 +15,18 @@
   --shadow-sm: 0 2px 6px rgba(31, 31, 31, 0.05);
   --shadow-md: 0 12px 30px rgba(31, 31, 31, 0.08);
   --shadow-lg: 0 18px 40px rgba(31, 31, 31, 0.12);
-  --radius-card: 24px;
+  /* Scales with card width so small mobile cards don't get oval-clipped. */
+  --radius-card: clamp(10px, calc(var(--card-w) * 0.12), 22px);
   --radius-panel: 20px;
   --radius-pill: 999px;
 
   /* Drop your custom card back at web/public/card-back.png (or override this var). */
   --card-back-image: url("/card-back.png");
   --card-back-tint: rgba(20, 20, 20, 0.0);
+
+  /* Fluid card sizing — every card uses these so phone <-> desktop scales smoothly. */
+  --card-w: clamp(74px, 11vw + 24px, 104px);
+  --card-h: calc(var(--card-w) * 1.423);
 }
 
 * {
@@ -268,6 +273,10 @@ select:focus {
   justify-content: space-between;
   gap: 1rem;
   margin: 0.5rem 0 1.5rem;
+  flex-wrap: wrap;
+}
+.page-head > * {
+  min-width: 0;
 }
 .mode-tabs {
   display: inline-flex;
@@ -349,8 +358,8 @@ select:focus {
 
 /* ── Playing card ───────────────────────────────────── */
 .card {
-  width: 104px;
-  height: 148px;
+  width: var(--card-w);
+  height: var(--card-h);
   background:
     radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.6), transparent 60%),
     linear-gradient(180deg, #ffffff 0%, var(--surface) 60%, #fbf6ec 100%);
@@ -366,10 +375,10 @@ select:focus {
 }
 .card .card-inset {
   position: absolute;
-  inset: 8px;
+  inset: clamp(2px, 3.5%, 6px);
   border: 1px solid rgba(31, 31, 31, 0.06);
-  border-radius: calc(var(--radius-card) - 9px);
-  padding: 8px 10px;
+  border-radius: calc(var(--radius-card) * 0.6);
+  padding: clamp(1px, 2%, 5px) clamp(1px, 2%, 5px);
   display: flex;
   flex-direction: column;
 }
@@ -387,42 +396,42 @@ select:focus {
   line-height: 1;
 }
 .card .corner.tl {
-  top: 4px;
-  left: 6px;
+  top: clamp(2px, 3%, 5px);
+  left: clamp(3px, 4.5%, 7px);
 }
 .card .corner.br {
-  bottom: 4px;
-  right: 6px;
+  bottom: clamp(2px, 3%, 5px);
+  right: clamp(3px, 4.5%, 7px);
   transform: rotate(180deg);
 }
 .card .corner .rank {
-  font-size: 1rem;
+  font-size: clamp(0.78rem, 1.2vw + 0.45rem, 1rem);
 }
 .card .corner .suit {
-  font-size: 0.9rem;
+  font-size: clamp(0.7rem, 1vw + 0.4rem, 0.9rem);
   margin-top: 1px;
 }
 
 /* Pip cluster — number cards */
 .card .pips {
   flex: 1;
-  margin: 14px 16px;
+  /* Top/bottom margin keeps pips clear of corner indicators without eating the whole face. */
+  margin: clamp(14px, 18%, 22px) clamp(2px, 8%, 10px);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: stretch;
   pointer-events: none;
+  min-width: 0;
 }
 .card .pip-row {
   display: flex;
-  justify-content: space-around;
+  justify-content: space-evenly;
   align-items: center;
-}
-.card .pip-row:nth-child(even) .pip {
-  transform: rotate(180deg);
+  min-width: 0;
 }
 .card .pip {
-  font-size: 0.95rem;
+  font-size: clamp(0.62rem, 1.1vw + 0.34rem, 1rem);
   line-height: 1;
 }
 
@@ -434,7 +443,7 @@ select:focus {
   justify-content: center;
 }
 .card .face-ace {
-  font-size: 3rem;
+  font-size: clamp(2rem, 4.5vw + 0.4rem, 3rem);
   font-weight: 600;
 }
 .card .face-court {
@@ -442,13 +451,13 @@ select:focus {
   gap: 2px;
 }
 .card .court-letter {
-  font-size: 2.4rem;
+  font-size: clamp(1.5rem, 3vw + 0.5rem, 2.4rem);
   font-weight: 800;
   letter-spacing: -0.06em;
   line-height: 1;
 }
 .card .court-glyph {
-  font-size: 1.1rem;
+  font-size: clamp(0.85rem, 1.2vw + 0.45rem, 1.1rem);
   opacity: 0.85;
 }
 
@@ -482,8 +491,8 @@ select:focus {
 }
 
 .card-back {
-  width: 104px;
-  height: 148px;
+  width: var(--card-w);
+  height: var(--card-h);
   border-radius: var(--radius-card);
   cursor: pointer;
   position: relative;
@@ -552,8 +561,10 @@ select:focus {
 
 /* ── Memory tile (3D flip) ──────────────────────────── */
 .memory-tile {
-  width: 104px;
-  height: 148px;
+  width: var(--tile-w, var(--card-w));
+  /* Lock card aspect ratio so the back face can't collapse to a square on small screens. */
+  aspect-ratio: 1 / 1.423;
+  height: auto;
   perspective: 1000px;
   cursor: pointer;
   transition: transform 200ms cubic-bezier(.2,.7,.2,1);
@@ -675,10 +686,25 @@ select:focus {
 
 /* ── Memory ─────────────────────────────────────────── */
 .memory-grid {
+  --cols: 4;
+  --grid-gap: clamp(6px, 1.4vw, 14px);
+  /* Available room ≈ viewport minus container padding (1.25rem each side). */
+  --avail: min(100vw - 2.5rem, 960px);
+  --tile-w: min(
+    var(--card-w),
+    calc((var(--avail) - (var(--cols) - 1) * var(--grid-gap)) / var(--cols))
+  );
+  --tile-h: calc(var(--tile-w) * 1.423);
   display: grid;
-  gap: 14px;
+  gap: var(--grid-gap);
   justify-content: center;
   margin: 0.5rem auto;
+  grid-template-columns: repeat(var(--cols), var(--tile-w));
+}
+.memory-grid .card,
+.memory-grid .card-back {
+  width: var(--tile-w);
+  height: var(--tile-h);
 }
 
 .player-chip {
@@ -847,22 +873,84 @@ th {
   background: #ff4480;
 }
 
-@media (max-width: 560px) {
-  .card,
-  .card-back,
-  .memory-tile {
-    width: 84px;
-    height: 120px;
+@media (max-width: 720px) {
+  .container {
+    padding: 1rem 0.9rem 4rem;
   }
-  .card .face-ace { font-size: 2.4rem; }
-  .card .court-letter { font-size: 2rem; }
-  .card .pip { font-size: 0.78rem; }
-  .card-back .back-mark { font-size: 0.7rem; letter-spacing: 0.24em; }
+  .nav {
+    padding: 0.85rem 1rem;
+    gap: 0.75rem;
+  }
+  .nav .brand {
+    font-size: 1rem;
+  }
+  .nav a:not(.brand) {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.9rem;
+  }
   .hero {
-    padding: 2.5rem 1rem 1.5rem;
+    padding: 2.5rem 0.75rem 1.5rem;
   }
   .panel {
     padding: 1.1rem;
+    border-radius: 16px;
+  }
+  .page-head {
+    margin: 0 0 1rem;
+    gap: 0.75rem;
+  }
+  .page-head .lede {
+    font-size: 0.9rem;
+  }
+  .mode-tabs .tab {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.92rem;
+  }
+  .player-chip {
+    min-width: 0;
+    padding: 0.55rem 0.8rem;
+  }
+  .player-chip .name {
+    font-size: 0.9rem;
+  }
+  .chip {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.88rem;
+  }
+  .hud {
+    width: 100%;
+  }
+  .expr {
+    font-size: 1.15rem;
+    padding: 0.85rem 1rem;
+  }
+  button {
+    padding: 0.75rem 1.1rem;
+  }
+  button.ghost {
+    padding: 0.6rem 0.85rem;
+  }
+  .op-card { padding: 0.85rem; }
+  .op-card .glyph { font-size: 1.5rem; }
+  .winner-banner {
+    padding: 1rem 1.1rem;
+  }
+  .winner-banner .winner-name {
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .hero h1 {
+    font-size: clamp(1.9rem, 8vw, 2.4rem);
+  }
+  .nav {
+    padding: 0.75rem 0.85rem;
+    gap: 0.5rem;
+  }
+  .nav a:not(.brand) {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.85rem;
   }
 }
 
@@ -873,7 +961,7 @@ th {
 .card-board-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: clamp(0.6rem, 1.6vw, 1.5rem);
   justify-content: center;
   margin: 1rem 0;
 }
@@ -886,9 +974,15 @@ th {
   padding: 6px;
   border-radius: 14px;
   cursor: grab;
+  /* Disable native gestures over a card so a finger drag isn't hijacked by page scroll. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .board-slot:active { cursor: grabbing; }
+.board-slot * { -webkit-user-drag: none; }
 .board-slot.selected {
   background: var(--surface-2);
   box-shadow: 0 0 0 2px var(--accent-2);
@@ -898,19 +992,58 @@ th {
   background: var(--surface-2);
   box-shadow: 0 0 0 2px var(--accent);
 }
+.board-slot.dragging {
+  cursor: grabbing;
+  transition: none;
+  will-change: transform;
+  pointer-events: none; /* let elementsFromPoint see the slot beneath */
+}
+.board-slot.dragging .card,
+.board-slot.dragging .card.combined {
+  box-shadow: 0 30px 60px rgba(31, 31, 31, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  filter: brightness(1.02);
+}
+.board-slot.dragging .ace-toggle,
+.board-slot.dragging .value-tag {
+  opacity: 0.55;
+}
+.board-slot.drag-over:not(.dragging) {
+  transform: translateY(-3px) scale(1.03);
+}
+.board-slot.drag-over:not(.dragging) .card {
+  box-shadow: 0 0 0 3px var(--accent), 0 20px 44px rgba(255, 184, 77, 0.35);
+}
 
 .card.combined {
-  background: linear-gradient(180deg, #fdfaf4 0%, #f3ecdb 100%);
-  border: 1px solid var(--line-strong);
-  color: var(--text);
-  font-weight: 700;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
+    linear-gradient(180deg, #fff4dc 0%, #ffe1a8 100%);
+  border: 1px solid rgba(255, 184, 77, 0.55);
+  color: #6b3d0a;
+  font-weight: 800;
 }
-.card.combined .center {
-  font-size: 1.9rem;
+.card.combined .card-inset {
+  border-color: rgba(255, 184, 77, 0.35);
 }
-.card.combined .corner {
-  font-size: 0.95rem;
-  color: rgba(0,0,0,0.7);
+.card.combined .corner .rank {
+  font-size: clamp(0.82rem, 1.2vw + 0.5rem, 1.05rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.card.combined .combined-face {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.5rem, 3vw + 0.6rem, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 0 4px;
+  word-break: break-all;
 }
 
 .ace-toggle {
@@ -1002,11 +1135,13 @@ th {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
   padding: 1.1rem;
   border-radius: 14px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
+  background: var(--surface-2);
+  color: var(--text);
   border: 1px solid var(--line);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
@@ -1015,39 +1150,24 @@ th {
 .op-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
+  background: var(--surface);
 }
 .op-card:active { transform: translateY(0) scale(0.98); }
-.op-card .glyph { font-size: 1.8rem; line-height: 1; font-weight: 600; }
+.op-card .glyph {
+  font-size: 1.8rem;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+.op-card:hover .glyph { color: var(--text); }
 .op-card .label {
-  font-size: 0.74rem;
-  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  opacity: 0.85;
+  color: var(--text-muted);
 }
-.op-card.op-add {
-  background: linear-gradient(180deg, rgba(108, 140, 255, 0.14), rgba(108, 140, 255, 0.22));
-  border-color: rgba(108, 140, 255, 0.38);
-  color: #3a55b8;
-}
-.op-card.op-add:hover { border-color: rgba(108, 140, 255, 0.6); }
-.op-card.op-sub {
-  background: linear-gradient(180deg, rgba(143, 214, 148, 0.18), rgba(143, 214, 148, 0.28));
-  border-color: rgba(143, 214, 148, 0.5);
-  color: #2f6a37;
-}
-.op-card.op-sub:hover { border-color: rgba(143, 214, 148, 0.75); }
-.op-card.op-mul {
-  background: linear-gradient(180deg, rgba(255, 122, 122, 0.16), rgba(255, 122, 122, 0.26));
-  border-color: rgba(255, 122, 122, 0.45);
-  color: #a23a3a;
-}
-.op-card.op-mul:hover { border-color: rgba(255, 122, 122, 0.7); }
-.op-card.op-div {
-  background: linear-gradient(180deg, rgba(255, 184, 77, 0.2), rgba(255, 184, 77, 0.32));
-  border-color: rgba(255, 184, 77, 0.5);
-  color: #8a5510;
-}
-.op-card.op-div:hover { border-color: rgba(255, 184, 77, 0.75); }
 .op-modal > button.ghost { width: 100%; }
 
 /* Round complete panel (multiplayer 24 pause state) */

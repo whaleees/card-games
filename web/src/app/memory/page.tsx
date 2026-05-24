@@ -270,7 +270,7 @@ export default function MemoryPage() {
       <div className="board-wrap" style={{ marginTop: "1.5rem" }}>
         <div
           className="memory-grid"
-          style={{ gridTemplateColumns: `repeat(${gridCols}, 104px)` }}
+          style={{ ["--cols" as string]: gridCols } as React.CSSProperties}
         >
           {state.cards.map((c) => {
             const revealed = c.flipped || c.matched;
